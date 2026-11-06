@@ -63,6 +63,25 @@ app.get("/stream", (_req, res) => {
   openStream(res, null);
 });
 
+const DELIVERY_DELAY = 20_000;
+
+function scheduleDelivery(orderId: number): void {
+  setTimeout(async () => {
+    const orders = await getOrders();
+    const index = orders.findIndex((o) => o.id === orderId);
+    const order = orders[index];
+    if (!order || order.status !== "shipped") return;
+
+    const deliveredOrder: Order = { ...order, status: "delivered" };
+    await db.push(`/orders[${index}]/status`, "delivered");
+    broadcast("order-status", deliveredOrder, orderId);
+  }, DELIVERY_DELAY);
+}
+
+for (const order of await getOrders()) {
+  if (order.status === "shipped") scheduleDelivery(order.id);
+}
+
 app.get("/users", async (_req, res) => {
   res.status(200).json(await getUsers());
 });
@@ -168,6 +187,7 @@ app.patch("/orders/:id", async (req, res) => {
   const updatedOrder: Order = { ...order, status };
   await db.push(`/orders[${index}]/status`, status);
   broadcast(status === "cancelled" ? "order-cancelled" : "order-status", updatedOrder, updatedOrder.id);
+  if (status === "shipped") scheduleDelivery(updatedOrder.id);
   res.status(200).json(updatedOrder);
 });
 

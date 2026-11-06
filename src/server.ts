@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import type { Response } from "express";
 import { db, getOrders, getProducts, getUsers } from "./db.ts";
 import type { Order, Status } from "./types.ts";
 
@@ -34,6 +35,33 @@ function getStatus(body: unknown): Status | null {
   const { status } = body as Record<string, unknown>;
   return STATUSES.find((s) => s === status) ?? null;
 }
+
+type EventName = "order-created" | "order-status" | "order-cancelled" | "stock-updated";
+
+const clients = new Map<Response, number | null>();
+let eventId = 0;
+
+function openStream(res: Response, orderId: number | null): void {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+  });
+  res.flushHeaders();
+  clients.set(res, orderId);
+  res.on("close", () => clients.delete(res));
+}
+
+function broadcast(event: EventName, data: unknown, orderId: number | null = null): void {
+  const msg = `id: ${++eventId}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  for (const [res, followed] of clients) {
+    if (followed === null || followed === orderId) res.write(msg);
+  }
+}
+
+app.get("/stream", (_req, res) => {
+  openStream(res, null);
+});
 
 app.get("/users", async (_req, res) => {
   res.status(200).json(await getUsers());
@@ -94,8 +122,11 @@ app.post("/orders", async (req, res) => {
     createdAt: new Date().toISOString(),
   };
 
-  await db.push(`/products[${productIndex}]/stock`, product.stock - quantity);
+  const updatedProduct = { ...product, stock: product.stock - quantity };
+  await db.push(`/products[${productIndex}]/stock`, updatedProduct.stock);
   await db.push("/orders[]", order);
+  broadcast("order-created", order, order.id);
+  broadcast("stock-updated", updatedProduct);
   res.status(201).json(order);
 });
 
@@ -125,15 +156,19 @@ app.patch("/orders/:id", async (req, res) => {
     const productIndex = products.findIndex((p) => p.id === order.productId);
     const product = products[productIndex];
     if (product) {
-      await db.push(`/products[${productIndex}]/stock`, product.stock + order.quantity);
+      const updatedProduct = { ...product, stock: product.stock + order.quantity };
+      await db.push(`/products[${productIndex}]/stock`, updatedProduct.stock);
+      broadcast("stock-updated", updatedProduct);
     }
   } else if (NEXT_STATUS[order.status] !== status) {
     res.status(409).json({ error: `Passage de ${order.status} à ${status} interdit` });
     return;
   }
 
+  const updatedOrder: Order = { ...order, status };
   await db.push(`/orders[${index}]/status`, status);
-  res.status(200).json({ ...order, status });
+  broadcast(status === "cancelled" ? "order-cancelled" : "order-status", updatedOrder, updatedOrder.id);
+  res.status(200).json(updatedOrder);
 });
 
 const PORT = Number(process.env.PORT) || 3000;

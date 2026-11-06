@@ -1,0 +1,12 @@
+{
+  "users": [
+    { "id": 1, "name": "Martin Matin", "username": "m.matin", "email": "martin@matin.fr" },
+    { "id": 2, "name": "Martin Midi", "username": "m.mide", "email": "martin@midi.fr" }
+  ],
+  "products": [
+    { "id": 1, "name": "Clavier", "stock": 10 },
+    { "id": 2, "name": "Souris", "stock": 5 },
+    { "id": 3, "name": "Écran", "stock": 2 }
+  ],
+  "orders": []
+}

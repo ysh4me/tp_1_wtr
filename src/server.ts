@@ -63,6 +63,17 @@ app.get("/stream", (_req, res) => {
   openStream(res, null);
 });
 
+app.get("/orders/:id/stream", async (req, res) => {
+  const id = Number(req.params.id);
+  const order = (await getOrders()).find((o) => o.id === id);
+
+  if (!order) {
+    res.status(404).json({ error: "Commande introuvable" });
+    return;
+  }
+  openStream(res, id);
+});
+
 const DELIVERY_DELAY = 20_000;
 
 function scheduleDelivery(orderId: number): void {

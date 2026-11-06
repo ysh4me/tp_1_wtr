@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Suivi de commande</title>
+</head>
+<body>
+  <h1>Suivi de commande</h1>
+  <p id="order"></p>
+  <p>Statut : <strong id="status">chargement…</strong></p>
+
+  <script>
+    const labels = {
+      preparing: "En préparation",
+      shipped: "Expédiée",
+      delivered: "Livrée",
+      cancelled: "Annulée",
+    };
+
+    const id = new URLSearchParams(location.search).get("id");
+
+    function render(order) {
+      document.querySelector("#order").textContent =
+        `Commande n°${order.id} : produit ${order.productId}, quantité ${order.quantity}`;
+      document.querySelector("#status").textContent = labels[order.status];
+    }
+
+    async function start() {
+      const res = await fetch(`/orders/${id}`);
+      if (res.status !== 200) {
+        document.querySelector("#status").textContent = "Commande introuvable";
+        return;
+      }
+      render(await res.json());
+
+      const source = new EventSource(`/orders/${id}/stream`);
+
+      source.addEventListener("order-status", (e) => {
+        render(JSON.parse(e.data));
+      });
+
+      source.addEventListener("order-cancelled", (e) => {
+        render(JSON.parse(e.data));
+      });
+
+      source.onerror = () => {
+        console.log("Coupure, reconnexion automatique…");
+      };
+    }
+
+    start();
+  </script>
+</body>
+</html>
